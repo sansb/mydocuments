@@ -210,7 +210,7 @@ TEMPLATE = """<!DOCTYPE html>
   #bio {
     position: absolute;
     left: 50%;
-    top: 66%; /* over the chest, where the portrait is widest */
+    top: 69%; /* over the chest, where the portrait is widest and densest */
     transform: translate(-50%, -50%);
     z-index: 0;
     width: max-content;
