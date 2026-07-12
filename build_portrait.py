@@ -338,6 +338,15 @@ TEMPLATE = """<!DOCTYPE html>
     px = x; py = y;
     fresh = true;
   });
+  // a new touch (or click) starts from rest: no stale velocity from the
+  // previous touch, and a plain tap gives a gentle poke
+  stage.addEventListener("pointerdown", function (ev) {
+    var r = stage.getBoundingClientRect();
+    px = ev.clientX - r.left;
+    py = ev.clientY - r.top;
+    pvx = pvy = 0;
+    fresh = true;
+  });
   stage.addEventListener("pointerleave", function () { px = py = null; });
 
   function tick() {
