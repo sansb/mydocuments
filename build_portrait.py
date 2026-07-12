@@ -257,7 +257,7 @@ TEMPLATE = """<!DOCTYPE html>
     I like working: <a href="https://www.linkedin.com/in/sean-bloomfield-80141826/" target="_blank" rel="noopener">LinkedIn</a><br>
     I like music: <a href="https://www.last.fm/user/sansbloomfield" target="_blank" rel="noopener">Last.fm</a><br>
     I like <a href="https://x.com/cregslist" target="_blank" rel="noopener">Twitter</a><br>
-    I usually like living
+    I like <a href="https://relaythespire.com/seanb" target="_blank" rel="noopener">Slay the Spire</a>
   </div>
 </div>
 <button id="restore">put me back together</button>
