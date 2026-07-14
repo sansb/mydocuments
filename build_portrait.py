@@ -104,8 +104,6 @@ def main():
     hi = lumas[int(len(lumas) * 0.95)]
 
     # ---- quadtree ------------------------------------------------------
-    leaves = []  # (x, y, size, elev, (r, g, b))
-
     def block_stats(x0, y0, s):
         n = s * s
         sums = [0, 0, 0]
@@ -122,56 +120,67 @@ def main():
         var = max(sq[i] / n - mean[i] ** 2 for i in range(3))
         return mean, max(var, 0) ** 0.5, walls
 
-    def leaf(x0, y0, s, mean, is_wall):
-        color = tuple(min(255, round(v)) for v in mean)
-        if is_wall:
-            e = 0
-        else:
-            t = max(0.0, min(1.0, (luma(color) - lo) / (hi - lo)))
-            e = 1 + round(t * (LEVELS - 1))
-        leaves.append((x0, y0, s, e, color))
+    def build_leaves(min_size, split_std):
+        leaves = []  # (x, y, size, elev, (r, g, b))
 
-    def build(x0, y0, s):
-        mean, std, walls = block_stats(x0, y0, s)
-        pure = walls == 0 or walls == s * s
-        if s == 1 or (pure and std <= SPLIT_STD[s]):
-            if s > 1 or pure:
-                leaf(x0, y0, s, mean, walls > 0)
+        def leaf(x0, y0, s, mean, is_wall):
+            color = tuple(min(255, round(v)) for v in mean)
+            if is_wall:
+                e = 0
+            else:
+                t = max(0.0, min(1.0, (luma(color) - lo) / (hi - lo)))
+                e = 1 + round(t * (LEVELS - 1))
+            leaves.append((x0, y0, s, e, color))
+
+        def build(x0, y0, s):
+            mean, std, walls = block_stats(x0, y0, s)
+            n = s * s
+            pure = walls == 0 or walls == n
+            if s <= min_size or (pure and std <= split_std[s]):
+                # at min size a mixed block can't split; majority wins
+                leaf(x0, y0, s, mean, walls > n / 2)
                 return
-        if s == 1:  # mixed single cell can't split; majority wins
-            leaf(x0, y0, s, mean, wall[y0][x0])
-            return
-        half = s // 2
-        for dy in (0, half):
-            for dx in (0, half):
-                build(x0 + dx, y0 + dy, half)
+            half = s // 2
+            for dy in (0, half):
+                for dx in (0, half):
+                    build(x0 + dx, y0 + dy, half)
 
-    for by in range(0, BASE_ROWS, 8):
-        for bx in range(0, BASE_COLS, 8):
-            build(bx, by, 8)
+        for by in range(0, BASE_ROWS, 8):
+            for bx in range(0, BASE_COLS, 8):
+                build(bx, by, 8)
+        return leaves
 
-    # ---- encode: xx yy s e rrggbb = 12 chars per leaf ------------------
-    data = "".join(
-        f"{b36(x)}{b36(y)}{s}{e}{r:02x}{g:02x}{b:02x}"
-        for x, y, s, e, (r, g, b) in leaves
-    )
+    def encode(leaves):
+        # xx yy s e rrggbb = 12 chars per leaf
+        return "".join(
+            f"{b36(x)}{b36(y)}{s}{e}{r:02x}{g:02x}{b:02x}"
+            for x, y, s, e, (r, g, b) in leaves
+        )
+
+    full = build_leaves(1, SPLIT_STD)
+    # coarse variant for phones: nothing smaller than 2 base units —
+    # at phone widths a 1-unit cell is ~4px, invisible detail that
+    # still costs paint time
+    coarse = build_leaves(2, SPLIT_STD)
     wall_hex = "#{:02x}{:02x}{:02x}".format(*corner)
 
     html = (
         TEMPLATE.replace("__BASECOLS__", str(BASE_COLS))
         .replace("__BASEROWS__", str(BASE_ROWS))
         .replace("__WALL__", wall_hex)
-        .replace("__DATA__", data)
+        .replace("__DATA__", encode(full))
+        .replace("__DATACOARSE__", encode(coarse))
     )
     OUT.write_text(html)
 
     from collections import Counter
-    sizes = Counter(s for _, _, s, _, _ in leaves)
-    subject = sum(1 for l in leaves if l[3] > 0)
-    print(f"{OUT.name}: {len(leaves)} leaves "
-          f"(sizes {dict(sorted(sizes.items(), reverse=True))}), "
-          f"{subject} subject / {len(leaves) - subject} wall, "
-          f"{OUT.stat().st_size // 1024} KB")
+    for name, leaves in (("full", full), ("coarse", coarse)):
+        sizes = Counter(s for _, _, s, _, _ in leaves)
+        subject = sum(1 for l in leaves if l[3] > 0)
+        print(f"{name}: {len(leaves)} leaves "
+              f"(sizes {dict(sorted(sizes.items(), reverse=True))}), "
+              f"{subject} subject / {len(leaves) - subject} wall")
+    print(f"{OUT.name}: {OUT.stat().st_size // 1024} KB")
 
 
 TEMPLATE = """<!DOCTYPE html>
@@ -264,7 +273,11 @@ TEMPLATE = """<!DOCTYPE html>
 <script>
 (function () {
   var BC = __BASECOLS__, BR = __BASEROWS__;
-  var D = "__DATA__";
+  // phones get a coarser mosaic: half the pieces at a detail level
+  // their pixel width can't show anyway
+  var D = Math.min(innerWidth, innerHeight) < 600
+    ? "__DATACOARSE__"
+    : "__DATA__";
   var stage = document.getElementById("stage");
   var restore = document.getElementById("restore");
   var cells = [];
