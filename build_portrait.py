@@ -311,10 +311,11 @@ TEMPLATE = """<!DOCTYPE html>
       el.height = size + "px";
       el.left = c.cx - size / 2 + "px";
       el.top = c.cy - size / 2 + "px";
+      // zero-blur shadow: reads as elevation but is ~10x cheaper to
+      // paint than a blurred one across thousands of cells
       el.boxShadow = c.e
-        ? lift + "px " + (lift + unit * 0.1) + "px " +
-          (c.e * unit * 0.14 + size * 0.06) + "px rgba(60,40,20," +
-          (0.1 + c.e * 0.035) + ")"
+        ? lift + "px " + (lift + unit * 0.14) + "px 0 rgba(60,40,20," +
+          (0.12 + c.e * 0.025) + ")"
         : "none";
     });
   }
@@ -369,17 +370,21 @@ TEMPLATE = """<!DOCTYPE html>
         c.vx += (ax / d) * k + pvx * f * 0.12 / mass;
         c.vy += (ay / d) * k + pvy * f * 0.12 / mass;
         c.vr += (Math.random() - 0.5) * f * 10 / mass;
-        active.add(c);
+        if (!active.has(c)) {
+          active.add(c);
+          c.el.style.willChange = "transform"; // own layer only in flight
+        }
         if (!disturbed) { disturbed = true; restore.classList.add("show"); }
       }
     }
     active.forEach(function (c) {
       c.dx += c.vx; c.dy += c.vy; c.rot += c.vr;
       c.vx *= 0.86; c.vy *= 0.86; c.vr *= 0.86;
-      c.el.style.transform = "translate3d(" + c.dx.toFixed(2) + "px," +
-        c.dy.toFixed(2) + "px,0) rotate(" + c.rot.toFixed(2) + "deg)";
+      c.el.style.transform = "translate(" + c.dx.toFixed(2) + "px," +
+        c.dy.toFixed(2) + "px) rotate(" + c.rot.toFixed(2) + "deg)";
       if (Math.hypot(c.vx, c.vy) < 0.04 && Math.abs(c.vr) < 0.04) {
         active.delete(c);
+        c.el.style.willChange = ""; // drop the layer once at rest
       }
     });
   }
@@ -388,6 +393,7 @@ TEMPLATE = """<!DOCTYPE html>
   restore.addEventListener("click", function () {
     var instant = matchMedia("(prefers-reduced-motion: reduce)").matches;
     homing = true;
+    active.forEach(function (c) { c.el.style.willChange = ""; });
     active.clear();
     stage.classList.toggle("homing", !instant);
     cells.forEach(function (c) {
